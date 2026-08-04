@@ -1,3 +1,7 @@
+"""
+Spam Detection API - Fixed Version
+Run: streamlit run deployment/api_app.py
+"""
 import streamlit as st
 import joblib
 import re
@@ -8,17 +12,31 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
+# Disable sklearn warnings
+import warnings
+warnings.filterwarnings('ignore')
+
 @st.cache_resource
 def load_or_train_model():
-    """Load model or train on large dataset"""
+    """Load model if exists, otherwise train with consistent vectorizer"""
     try:
+        # Try to load existing model
         model = joblib.load('models/classifier.pkl')
         vectorizer = joblib.load('models/vectorizer.pkl')
+        
+        # Verify vectorizer works
+        test_text = "test"
+        test_vec = vectorizer.transform([test_text])
+        print(f"✅ Model loaded: {test_vec.shape[1]} features")
+        
         return model, vectorizer, "loaded"
-    except:
+        
+    except Exception as e:
+        st.warning(f"Model not found: {e}")
+        st.info("⏳ Training new model with consistent vectorizer...")
+        
         try:
-            st.info("⏳ Training model... Please wait 2-3 minutes")
-            
+            # Training data
             spam_emails = [
                 "congratulations you won a prize claim your cash now",
                 "free money click here to claim your reward",
@@ -50,26 +68,6 @@ def load_or_train_model():
                 "financial freedom in 30 days program",
                 "debt relief program eliminate your debt now",
                 "cash bonus available for a limited time",
-                "winner winner you have been selected",
-                "click here to claim your prize now",
-                "you are the lucky winner of our lottery",
-                "special promotion just for you today",
-                "act fast limited stock available",
-                "free iphone 15 click here to get yours",
-                "win a brand new car enter now",
-                "congratulations you are our winner",
-                "claim your cash prize before it expires",
-                "you have won a luxury vacation package",
-                "free samples available order now",
-                "exclusive membership discount for you",
-                "urgent security alert verify your identity",
-                "account locked due to suspicious activity",
-                "your account is at risk please verify",
-                "immediate action required to restore your account",
-                "security breach detected secure your account",
-                "unauthorized login attempt from new device",
-                "your account has been suspended click to restore",
-                "verify your email address to avoid closure",
             ]
             
             ham_emails = [
@@ -103,32 +101,11 @@ def load_or_train_model():
                 "talk to you then about the project updates",
                 "enjoy your weekend and take care",
                 "take care of yourself and stay healthy",
-                "keep up the good work on the project",
-                "thanks for the update on the project status",
-                "i understand your concern and will address it",
-                "lets find a solution together as a team",
-                "appreciate your patience and understanding",
-                "will follow up next week with more details",
-                "please let me know if you have any questions",
-                "looking forward to your valuable feedback",
-                "hope all is well with you and your team",
-                "take care and stay safe during these times",
-                "thanks for the detailed report it looks great",
-                "i will review the document and get back to you",
-                "can we schedule a meeting for this afternoon",
-                "let me know when you are available to discuss",
-                "thank you for your cooperation on this matter",
-                "looking forward to a successful collaboration",
-                "have a great rest of the week",
-                "take care and talk to you soon",
-                "appreciate your hard work on this project",
-                "good luck with the presentation tomorrow",
-                "you are doing an excellent job keep it up",
-                "thanks for your dedication to this project",
             ]
             
-            all_spam = spam_emails * 5
-            all_ham = ham_emails * 5
+            # Multiply data for better training
+            all_spam = spam_emails * 3
+            all_ham = ham_emails * 3
             
             df = pd.DataFrame({
                 'text': all_spam + all_ham,
@@ -145,8 +122,9 @@ def load_or_train_model():
             
             df['clean'] = df['text'].apply(clean_text)
             
+            # Consistent vectorizer - FIXED NUMBER OF FEATURES
             vectorizer = TfidfVectorizer(
-                max_features=3000,
+                max_features=2000,  # Consistent features
                 stop_words='english',
                 ngram_range=(1, 2),
                 min_df=2,
@@ -156,9 +134,12 @@ def load_or_train_model():
             X = vectorizer.fit_transform(df['clean'])
             y = df['label']
             
+            st.info(f"📊 Training on {len(df)} emails with {X.shape[1]} features")
+            
+            # Train model
             rf = RandomForestClassifier(
-                n_estimators=200,
-                max_depth=20,
+                n_estimators=100,
+                max_depth=15,
                 min_samples_split=5,
                 random_state=42,
                 n_jobs=-1
@@ -166,14 +147,16 @@ def load_or_train_model():
             
             rf.fit(X, y)
             
+            # Calibrate
             calibrated_rf = CalibratedClassifierCV(rf, cv=3, method='isotonic')
             calibrated_rf.fit(X, y)
             
+            # Save
             os.makedirs('models', exist_ok=True)
             joblib.dump(calibrated_rf, 'models/classifier.pkl')
             joblib.dump(vectorizer, 'models/vectorizer.pkl')
             
-            st.success(f"✅ Model trained on {len(df)} emails!")
+            st.success(f"✅ Model trained on {len(df)} emails with {X.shape[1]} features!")
             return calibrated_rf, vectorizer, "trained"
             
         except Exception as e:
@@ -192,86 +175,53 @@ def predict_spam(email, model, vectorizer):
     if model is None or vectorizer is None:
         return {'error': 'Model not available'}
     
-    clean = clean_text(email)
-    vectorized = vectorizer.transform([clean])
-    prediction = model.predict(vectorized)[0]
-    probabilities = model.predict_proba(vectorized)[0]
-    
-    confidence = float(max(probabilities))
-    word_count = len(email.split())
-    
-    # Confidence boost based on word count
-    if word_count <= 2:
-        # For very short texts, use rule-based classification
-        spam_words = ['won', 'free', 'prize', 'cash', 'money', 'urgent', 'verify', 'limited', 'offer', 'claim', 'winner', 'click', 'win']
-        ham_words = ['hello', 'hi', 'hey', 'good', 'thanks', 'thank', 'please', 'sorry', 'meet', 'meeting']
+    try:
+        clean = clean_text(email)
+        vectorized = vectorizer.transform([clean])
+        
+        prediction = model.predict(vectorized)[0]
+        probabilities = model.predict_proba(vectorized)[0]
+        
+        confidence = float(max(probabilities))
+        
+        # Boost confidence for clear cases
+        spam_words = ['won', 'free', 'prize', 'cash', 'money', 'urgent', 'verify', 'limited', 'offer', 'claim', 'winner']
+        ham_words = ['meeting', 'project', 'thanks', 'report', 'review', 'please', 'team', 'how are you']
         
         text_lower = email.lower()
         spam_count = sum(1 for w in spam_words if w in text_lower)
         ham_count = sum(1 for w in ham_words if w in text_lower)
         
-        if spam_count > ham_count:
-            return {
-                'prediction': 'spam',
-                'confidence': 0.85,
-                'spam_probability': 0.85,
-                'ham_probability': 0.15
-            }
-        elif ham_count > spam_count:
-            return {
-                'prediction': 'ham',
-                'confidence': 0.85,
-                'spam_probability': 0.15,
-                'ham_probability': 0.85
-            }
-        else:
-            # Neutral words
-            return {
-                'prediction': 'ham',
-                'confidence': 0.80,
-                'spam_probability': 0.20,
-                'ham_probability': 0.80
-            }
-    
-    # For longer texts, use model with confidence boost
-    spam_words = ['won', 'free', 'prize', 'cash', 'money', 'urgent', 'verify', 'limited', 'offer', 'claim', 'winner']
-    ham_words = ['meeting', 'project', 'thanks', 'report', 'review', 'please', 'team']
-    
-    text_lower = email.lower()
-    spam_count = sum(1 for w in spam_words if w in text_lower)
-    ham_count = sum(1 for w in ham_words if w in text_lower)
-    
-    if prediction == 1 and spam_count >= 2:
-        confidence = min(confidence * 1.3, 0.99)
-    elif prediction == 0 and ham_count >= 2:
-        confidence = min(confidence * 1.3, 0.99)
-    elif word_count >= 10:
-        # Longer texts get a confidence boost
-        confidence = min(confidence * 1.2, 0.99)
-    
-    return {
-        'prediction': 'spam' if prediction == 1 else 'ham',
-        'confidence': confidence,
-        'spam_probability': float(probabilities[1]),
-        'ham_probability': float(probabilities[0])
-    }
+        # Boost confidence based on word counts
+        if prediction == 1 and spam_count >= 2:
+            confidence = min(confidence * 1.2, 0.99)
+        elif prediction == 0 and ham_count >= 2:
+            confidence = min(confidence * 1.2, 0.99)
+        
+        return {
+            'prediction': 'spam' if prediction == 1 else 'ham',
+            'confidence': confidence,
+            'spam_probability': float(probabilities[1]),
+            'ham_probability': float(probabilities[0])
+        }
+        
+    except Exception as e:
+        return {'error': str(e)}
 
 # Load or train model
-with st.spinner("Loading/ Training model..."):
+with st.spinner("Loading/Training model..."):
     model, vectorizer, status = load_or_train_model()
 
 st.set_page_config(page_title="Spam Detection API", page_icon="📧", layout="wide")
 
 st.title("📧 Spam Detection API")
-st.markdown("### Powered by Random Forest")
-
-# Add warning about short emails
-st.info("📌 For best results, use emails with 5+ words. Short texts may have lower confidence.")
+st.markdown("### Powered by Random Forest with Consistent Features")
 
 with st.sidebar:
     st.subheader("📊 Status")
     if status == "loaded":
         st.success("✅ Model Loaded")
+        st.info("🚀 Ready for predictions")
     elif status == "trained":
         st.success("✅ Model Trained Successfully!")
     else:
@@ -285,23 +235,23 @@ email_input = st.text_area(
     placeholder="Paste email here..."
 )
 
-col1, col2 = st.columns([1, 4])
-with col1:
-    if st.button("🚀 Predict", type="primary"):
-        if email_input:
-            if model is not None:
-                with st.spinner("Analyzing..."):
-                    result = predict_spam(email_input, model, vectorizer)
-                    if "error" in result:
-                        st.error(result["error"])
+if st.button("🔍 Predict", type="primary"):
+    if email_input:
+        if model is not None:
+            with st.spinner("Analyzing..."):
+                result = predict_spam(email_input, model, vectorizer)
+                if "error" in result:
+                    st.error(f"❌ {result['error']}")
+                else:
+                    st.json(result)
+                    if result["prediction"] == "spam":
+                        st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
                     else:
-                        st.json(result)
-                        if result["prediction"] == "spam":
-                            st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
-                        else:
-                            st.success(f"✅ HAM (Confidence: {result['confidence']:.2%}")
-            else:
-                st.warning("Model not ready. Please wait for training to complete.")
+                        st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
+        else:
+            st.warning("Model not ready")
+    else:
+        st.warning("Please enter some text")
 
 st.markdown("---")
 st.caption("🚀 Deployed on Streamlit Cloud")
