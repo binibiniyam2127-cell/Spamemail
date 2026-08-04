@@ -1,0 +1,9 @@
+============================================================
+CALIBRATED RANDOM FOREST
+============================================================
+
+Accuracy: 0.9694
+Mean Confidence: 0.5054
+Std Confidence: 0.4730
+Min Confidence: 0.0000
+Max Confidence: 0.9999
