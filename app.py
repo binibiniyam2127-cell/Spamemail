@@ -1,12 +1,11 @@
 """
-Spam Detection Dashboard - Training on First Run
+Spam Detection Dashboard
 """
 import streamlit as st
 import pandas as pd
 import joblib
 import re
 import os
-import sys
 
 st.set_page_config(
     page_title="Spam Detection Dashboard",
@@ -18,16 +17,12 @@ def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
-    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
-    text = re.sub(r'\S+@\S+', 'EMAIL', text)
-    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
-    text = re.sub(r'\d+', ' ', text)
-    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 @st.cache_resource
-def load_or_train_model():
+def load_or_train():
     """Load model if exists, otherwise train"""
     try:
         # Try to load existing model
@@ -35,23 +30,14 @@ def load_or_train_model():
         vectorizer = joblib.load('models/vectorizer.pkl')
         return model, vectorizer, "loaded"
     except:
-        # Model doesn't exist, train it
         try:
-            st.info("⏳ Training model... Please wait (2-3 minutes)")
-            import subprocess
-            result = subprocess.run(
-                [sys.executable, "train_model.py"],
-                capture_output=True,
-                text=True
-            )
-            if result.returncode == 0:
-                model = joblib.load('models/classifier.pkl')
-                vectorizer = joblib.load('models/vectorizer.pkl')
-                return model, vectorizer, "trained"
-            else:
-                return None, None, "error"
+            # Train model
+            from train_model import train_and_save
+            with st.spinner("⏳ Training model... Please wait (1-2 minutes)"):
+                model, vectorizer = train_and_save()
+            return model, vectorizer, "trained"
         except Exception as e:
-            return None, None, "error"
+            return None, None, f"error: {str(e)}"
 
 def predict_spam(text, model, vectorizer):
     if model is None or vectorizer is None:
@@ -67,23 +53,24 @@ def predict_spam(text, model, vectorizer):
         'confidence': float(max(probabilities))
     }
 
-# Load or train model
-with st.spinner("Loading model..."):
-    model, vectorizer, status = load_or_train_model()
+# Load model
+model, vectorizer, status = load_or_train()
 
 # Title
 st.title("📧 Spam Detection Dashboard")
-st.markdown("### Powered by Random Forest (97.34% Accuracy)")
+st.markdown("### Powered by Random Forest")
 
 # Sidebar
 with st.sidebar:
     st.title("📊 Status")
     if status == "loaded":
         st.success("✅ Model Loaded")
+        st.info("🚀 Ready for predictions")
     elif status == "trained":
         st.success("✅ Model Trained Successfully!")
     else:
-        st.error("❌ Model Not Available")
+        st.error(f"❌ Model Error")
+        st.text(status)
 
 st.subheader("🔍 Check if an email is Spam or Ham")
 
@@ -91,15 +78,13 @@ st.subheader("🔍 Check if an email is Spam or Ham")
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("📌 Spam"):
-        st.session_state.email_input = "Congratulations! You won $1,000,000! Click here to claim!"
-        st.rerun()
+        st.session_state.email_input = "Congratulations you won a prize click here"
 with col2:
     if st.button("📌 Ham"):
-        st.session_state.email_input = "Hi, how are you doing today?"
-        st.rerun()
+        st.session_state.email_input = "Hi how are you doing today"
 with col3:
     if st.button("📌 URGENT"):
-        st.session_state.email_input = "URGENT: Your account has been compromised!"
+        st.session_state.email_input = "Urgent action required verify your account"
 
 email_input = st.text_area(
     "Enter email content:",
@@ -110,7 +95,7 @@ email_input = st.text_area(
 
 if st.button("🔍 Predict", type="primary"):
     if email_input:
-        if model is not None and vectorizer is not None:
+        if model is not None:
             with st.spinner("Analyzing..."):
                 result = predict_spam(email_input, model, vectorizer)
                 if result['prediction'] == 'spam':
@@ -118,7 +103,7 @@ if st.button("🔍 Predict", type="primary"):
                 elif result['prediction'] == 'ham':
                     st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
         else:
-            st.warning("Model not ready. Please wait for training to complete.")
+            st.warning("Model not ready")
     else:
         st.warning("Please enter some text")
 

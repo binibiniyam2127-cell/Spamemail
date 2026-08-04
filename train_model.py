@@ -1,85 +1,97 @@
 """
-Train model on Streamlit Cloud
-This runs when the app starts and model files are not found
+Simple training script for Streamlit Cloud
 """
 import os
 import pandas as pd
 import joblib
 import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
 import re
 import nltk
 
 # Download NLTK data
-nltk.download('stopwords')
-nltk.download('punkt')
-nltk.download('wordnet')
+try:
+    nltk.download('stopwords', quiet=True)
+    nltk.download('punkt', quiet=True)
+except:
+    pass
 
 def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
-    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
-    text = re.sub(r'\S+@\S+', 'EMAIL', text)
-    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
-    text = re.sub(r'\d+', ' ', text)
-    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 def train_and_save():
     print("🚀 Training model...")
     
-    # Sample data for training (using Enron dataset)
-    data = {
-        'text': [
-            # Spam examples
-            "Congratulations! You've won $1,000,000! Click here to claim your prize NOW!",
-            "URGENT: Your account has been compromised. Verify immediately.",
-            "FREE iPhone 15! Limited time offer. Click here to get yours!",
-            "You have been selected as the winner of our lottery. Claim your cash prize!",
-            "Make $5000 per day working from home! No experience needed!",
-            "Your account has been locked. Click here to unlock it now.",
-            "100% guaranteed weight loss! Order now and get 50% off!",
-            
-            # Ham examples
-            "Hi John, can we meet tomorrow at 2pm to discuss the project?",
-            "Thanks for your email. I'll review the report and get back to you.",
-            "Please find attached the meeting agenda for next week.",
-            "Good morning team, here's the updated project timeline.",
-            "Dear manager, I'd like to request a vacation day for next Friday.",
-            "The quarterly report is ready for review. Let me know your thoughts.",
-            "Reminder: Staff meeting tomorrow at 10am in Conference Room B.",
-        ],
-        'label': [1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0]
-    }
+    # Create sample dataset
+    spam_emails = [
+        "Congratulations you won a prize",
+        "Free money click here",
+        "Urgent action required verify your account",
+        "You have been selected for a special offer",
+        "Claim your cash prize now",
+        "Limited time offer act now",
+        "Winner winner chicken dinner",
+        "Click here to claim your reward",
+        "Your account has been compromised",
+        "Verify your identity immediately",
+        "Free gift card waiting for you",
+        "You are the lucky winner",
+        "Exclusive deal just for you",
+        "Don't miss this opportunity",
+        "Cash bonus available now"
+    ]
     
-    df = pd.DataFrame(data)
+    ham_emails = [
+        "Hi how are you doing today",
+        "Can we meet tomorrow to discuss the project",
+        "Thanks for your email I will review it",
+        "Please find attached the report",
+        "Good morning team here is the update",
+        "Let me know your thoughts on this",
+        "Looking forward to our meeting",
+        "Have a great day",
+        "Thanks for your help",
+        "I appreciate your response",
+        "Can you send me the file",
+        "Let's schedule a call",
+        "Thank you for your time",
+        "Best regards",
+        "Have a wonderful weekend"
+    ]
+    
+    # Create DataFrame
+    texts = spam_emails + ham_emails
+    labels = [1] * len(spam_emails) + [0] * len(ham_emails)
+    
+    df = pd.DataFrame({'text': texts, 'label': labels})
     
     # Clean text
-    df['clean_text'] = df['text'].apply(clean_text)
+    df['clean'] = df['text'].apply(clean_text)
+    
+    print(f"📊 Training on {len(df)} samples")
     
     # Vectorize
     vectorizer = TfidfVectorizer(
-        max_features=2000,
+        max_features=1000,
         stop_words='english',
-        ngram_range=(1, 2),
-        min_df=1,
-        max_df=0.9
+        ngram_range=(1, 2)
     )
     
-    X = vectorizer.fit_transform(df['clean_text'])
+    X = vectorizer.fit_transform(df['clean'])
     y = df['label']
     
     # Train Random Forest
     rf = RandomForestClassifier(
-        n_estimators=100,
-        max_depth=15,
-        random_state=42,
-        n_jobs=-1
+        n_estimators=50,
+        max_depth=10,
+        random_state=42
     )
     
     rf.fit(X, y)
