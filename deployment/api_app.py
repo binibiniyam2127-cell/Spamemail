@@ -1,3 +1,6 @@
+"""
+Spam Detection API - With Rule Overrides
+"""
 import streamlit as st
 import joblib
 import re
@@ -5,22 +8,38 @@ import os
 
 # === RULE-BASED OVERRIDES ===
 HAM_PHRASES = [
-    'how are you', 'how are you doing', 'good morning', 'good afternoon',
-    'hope you are well', 'can we meet', 'lets meet', 'meet tomorrow',
-    'discuss the project', 'thanks for the report', 'thank you for the report',
-    'i will review', 'please find attached', 'let me know', 'looking forward',
-    'have a great day', 'best regards', 'kind regards', 'thanks for your email',
-    'thank you for your email', 'i appreciate', 'meeting agenda', 'quarterly report',
-    'budget review', 'team meeting', 'how are you today', 'hope all is well',
-    'take care', 'good to hear', 'great to hear', 'thanks', 'thank you',
-    'hi how are you', 'hello', 'hey', 'good morning team', 'good evening'
+    # Greetings
+    'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening',
+    'how are you', 'how are you doing', 'hope you are well', 'hope all is well',
+    'nice to meet', 'great to hear', 'good to hear', 'take care',
+    
+    # Meeting/Project
+    'can we meet', 'lets meet', 'let\'s meet', 'meet tomorrow', 'meet today',
+    'discuss the project', 'project discussion', 'team meeting', 'staff meeting',
+    'conference call', 'meeting agenda', 'quarterly report', 'budget review',
+    'presentation', 'proposal', 'deadline', 'milestone',
+    
+    # Work emails
+    'thanks for the report', 'thank you for the report', 'thanks for your email',
+    'thank you for your email', 'i will review', 'ill review', 'i appreciate',
+    'please find attached', 'attached is the', 'attached please find',
+    'let me know', 'let us know', 'please let me know', 'looking forward',
+    'looking forward to', 'have a great day', 'have a good day',
+    'best regards', 'kind regards', 'sincerely', 'cheers', 'warmly',
+    'thanks for your help', 'i appreciate your help', 'thank you for your time',
+    
+    # Single words (common ham words)
+    'hello', 'hi', 'hey', 'thanks', 'thank', 'please', 'sorry', 'goodbye',
+    'morning', 'afternoon', 'evening', 'weekend', 'monday', 'tuesday',
+    'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
 ]
 
 SPAM_PHRASES = [
     'won $', 'won', 'million', 'billion', 'free iphone', 'free',
     'claim your', 'claim now', 'urgent', 'verify your account',
     'account compromised', 'click here', 'click now', 'limited time',
-    'exclusive offer', 'guaranteed', 'unsubscribe', 'remove'
+    'exclusive offer', 'guaranteed', 'unsubscribe', 'remove',
+    'cash', 'prize', 'lottery', 'winner', 'congratulations',
 ]
 
 @st.cache_resource
@@ -45,9 +64,10 @@ def clean_text(text):
     return text
 
 def is_ham(text):
-    text_lower = text.lower()
+    text_lower = text.lower().strip()
+    # Check if exact word or phrase
     for phrase in HAM_PHRASES:
-        if phrase in text_lower:
+        if phrase == text_lower or phrase in text_lower:
             return True
     return False
 
@@ -60,7 +80,7 @@ def predict_spam(email, model, vectorizer):
     if model is None or vectorizer is None:
         return {'error': 'Model not loaded'}
     
-    # Rule override: if it's definitely ham
+    # === RULE OVERRIDE: If definitely ham ===
     if is_ham(email):
         return {
             'prediction': 'ham',
@@ -70,13 +90,14 @@ def predict_spam(email, model, vectorizer):
             'overridden': True
         }
     
+    # ML Prediction
     clean = clean_text(email)
     vectorized = vectorizer.transform([clean])
     prediction = model.predict(vectorized)[0]
     probabilities = model.predict_proba(vectorized)[0]
     confidence = float(max(probabilities))
     
-    # Boost spam if strong indicators
+    # Boost spam confidence if strong indicators
     if prediction == 1 and is_spam(email):
         confidence = min(confidence * 1.2, 0.99)
         return {
@@ -101,13 +122,17 @@ model, vectorizer, status = load_model()
 st.set_page_config(page_title="Spam Detection API", page_icon="📧", layout="wide")
 
 st.title("📧 Spam Detection API")
-st.markdown("### Powered by Random Forest + Enron Dataset (97% Accuracy)")
+st.markdown("### Powered by Random Forest + Rule Overrides")
 
 with st.sidebar:
     st.subheader("📊 Status")
     if model is not None:
         st.success("✅ Model Loaded")
-        st.info("📊 Accuracy: 97%")
+        try:
+            with open('models/feature_info.txt', 'r') as f:
+                st.info(f.read())
+        except:
+            pass
     else:
         st.error(f"❌ {status}")
 
