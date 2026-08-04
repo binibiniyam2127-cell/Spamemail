@@ -1,145 +1,116 @@
 """
 Streamlit Dashboard for Spam Detection
-Auto-detects local or deployed API
+Run: streamlit run deployment/streamlit_app.py
 """
 import streamlit as st
-import requests
 import pandas as pd
+import joblib
+import re
 import os
+import sys
 
-st.set_page_config(
-    page_title="Spam Detection Dashboard",
-    page_icon="📧",
-    layout="wide"
-)
+# Add project root to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Auto-detect API URL
-def get_api_url():
-    if os.environ.get('RAILWAY_ENVIRONMENT'):
-        return os.environ.get('API_URL', 'https://spam-api.up.railway.app')
-    return 'http://localhost:8000'
+def clean_text(text):
+    """Clean email text"""
+    if not isinstance(text, str):
+        text = str(text)
+    text = text.lower()
+    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
+    text = re.sub(r'\S+@\S+', 'EMAIL', text)
+    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
+    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
-API_URL = get_api_url()
-
-st.markdown("""
-<style>
-    .stButton button { background-color: #ff4b4b; color: white; font-weight: bold; }
-    .stButton button:hover { background-color: #ff6b6b; color: white; }
-    .spam-box { background-color: #ffebee; padding: 20px; border-radius: 10px; border: 2px solid #ff1744; }
-    .ham-box { background-color: #e8f5e9; padding: 20px; border-radius: 10px; border: 2px solid #00c853; }
-</style>
-""", unsafe_allow_html=True)
-
-# Sidebar
-with st.sidebar:
-    st.title("📊 Status")
-    
+@st.cache_resource
+def load_model():
+    """Load model with caching"""
     try:
-        response = requests.get(f"{API_URL}/health", timeout=5)
-        if response.status_code == 200:
-            st.success("✅ API Online")
-        else:
-            st.error("❌ API Offline")
+        model = joblib.load('models/classifier.pkl')
+        vectorizer = joblib.load('models/vectorizer.pkl')
+        return model, vectorizer
     except:
-        st.error("❌ API Not Reachable")
-        st.info("Deploying... May take a few minutes")
+        return None, None
+
+def predict_spam(text, model, vectorizer):
+    """Predict if text is spam"""
+    if model is None or vectorizer is None:
+        return {'prediction': 'error', 'confidence': 0}
+    
+    clean = clean_text(text)
+    vectorized = vectorizer.transform([clean])
+    prediction = model.predict(vectorized)[0]
+    probabilities = model.predict_proba(vectorized)[0]
+    
+    return {
+        'prediction': 'spam' if prediction == 1 else 'ham',
+        'confidence': float(max(probabilities))
+    }
+
+def main():
+    """Main function to run the app"""
+    
+    st.set_page_config(
+        page_title="Spam Detection Dashboard",
+        page_icon="📧",
+        layout="wide"
+    )
+    
+    st.title("📧 Spam Detection Dashboard")
+    st.markdown("### Powered by Random Forest (97.34% Accuracy)")
+    
+    # Load model
+    model, vectorizer = load_model()
+    
+    with st.sidebar:
+        st.title("📊 Status")
+        if model is not None:
+            st.success("✅ Model Loaded")
+        else:
+            st.error("❌ Model Not Loaded")
+            st.info("Training on first run may take a few minutes...")
+    
+    st.subheader("🔍 Check if an email is Spam or Ham")
+    
+    # Quick examples
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📌 Spam Example"):
+            st.session_state.email_input = "Congratulations! You won $1,000,000! Click here to claim!"
+    with col2:
+        if st.button("📌 Ham Example"):
+            st.session_state.email_input = "Hi, how are you doing today?"
+    with col3:
+        if st.button("📌 URGENT Example"):
+            st.session_state.email_input = "URGENT: Your account has been compromised!"
+    
+    # Text input
+    email_input = st.text_area(
+        "Enter email content:",
+        height=150,
+        placeholder="Paste email text here...",
+        key="email_input"
+    )
+    
+    # Predict button
+    if st.button("🔍 Predict", type="primary"):
+        if email_input:
+            with st.spinner("Analyzing..."):
+                result = predict_spam(email_input, model, vectorizer)
+                if result['prediction'] == 'spam':
+                    st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
+                elif result['prediction'] == 'ham':
+                    st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
+                else:
+                    st.warning("Model not ready. Please wait.")
+        else:
+            st.warning("Please enter some text")
     
     st.markdown("---")
-    st.caption("🚀 Deployed on Railway")
+    st.caption("🚀 Deployed on Streamlit Cloud")
 
-# Main Content
-st.title("📧 Spam Detection Dashboard")
-st.markdown("### Powered by FastAPI + Random Forest (97.34% Accuracy)")
-
-tab1, tab2 = st.tabs(["🔍 Single Prediction", "📊 Batch Analysis"])
-
-with tab1:
-    col1, col2 = st.columns([3, 1])
-    
-    with col1:
-        st.subheader("📝 Enter Email Text")
-        email_input = st.text_area(
-            "Paste your email content here:",
-            height=200,
-            key="email_input"
-        )
-        predict_btn = st.button("🚀 Predict", type="primary", use_container_width=True)
-    
-    with col2:
-        st.subheader("📌 Quick Examples")
-        examples = {
-            "Spam": "Congratulations! You've won $1,000,000! Click here!",
-            "Ham": "Hi, how are you doing today?",
-            "URGENT": "URGENT: Your account has been compromised!"
-        }
-        for label, text in examples.items():
-            if st.button(label, use_container_width=True):
-                st.session_state.email_input = text
-                st.rerun()
-    
-    if predict_btn and st.session_state.email_input:
-        with st.spinner("Analyzing..."):
-            try:
-                response = requests.post(
-                    f"{API_URL}/predict",
-                    json={"email": st.session_state.email_input}
-                )
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    st.markdown("---")
-                    st.subheader("📊 Prediction Result")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        if result['prediction'] == 'spam':
-                            st.error("⚠️ SPAM")
-                        else:
-                            st.success("✅ HAM")
-                    with col2:
-                        st.metric("Confidence", f"{result['confidence']:.2%}")
-                    with col3:
-                        if result.get('overridden', False):
-                            st.info("📌 Rule Override")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("Spam Prob.", f"{result['spam_probability']:.2%}")
-                        st.progress(result['spam_probability'])
-                    with col2:
-                        st.metric("Ham Prob.", f"{result['ham_probability']:.2%}")
-                        st.progress(result['ham_probability'])
-            except Exception as e:
-                st.error(f"Connection error: {e}")
-
-with tab2:
-    st.subheader("📊 Batch Email Analysis")
-    uploaded_file = st.file_uploader("Upload CSV with emails", type=['csv'])
-    
-    if uploaded_file:
-        df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
-        
-        if st.button("🔍 Analyze Batch", type="primary"):
-            if 'text' in df.columns:
-                with st.spinner("Analyzing..."):
-                    try:
-                        response = requests.post(
-                            f"{API_URL}/predict/batch",
-                            json={"emails": df['text'].tolist()}
-                        )
-                        if response.status_code == 200:
-                            result = response.json()
-                            col1, col2, col3 = st.columns(3)
-                            with col1:
-                                st.metric("📊 Total", result['total'])
-                            with col2:
-                                st.metric("🚨 Spam", result['spam_count'])
-                            with col3:
-                                st.metric("✅ Ham", result['ham_count'])
-                            st.dataframe(pd.DataFrame(result['results']))
-                    except Exception as e:
-                        st.error(f"Error: {e}")
-
-st.markdown("---")
-st.caption(f"🚀 API: {API_URL}")
+if __name__ == "__main__":
+    main()
