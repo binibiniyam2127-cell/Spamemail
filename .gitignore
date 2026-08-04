@@ -1,9 +1,12 @@
 .venv/
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 *.pkl
-models/
+*.joblib
 data/
+models/
 .vscode/
 .idea/
 *.log
