@@ -1,0 +1,53 @@
+# Virtual Environment
+.venv/
+env/
+venv/
+ENV/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Models (large files)
+*.pkl
+*.joblib
+models/
+*.model
+
+# Data (large files)
+*.csv
+*.xlsx
+*.parquet
+data/
+*.h5
+*.npz
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Logs
+*.log
+*.out
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Environment variables
+.env
+.env.local
+
+# Deployment
+*.zip
+*.tar.gz
+*.tar
