@@ -1,11 +1,12 @@
 """
-Spam Detection Dashboard - With Full Enron Dataset
+Spam Detection Dashboard - Fixed Version
 """
 import streamlit as st
 import pandas as pd
 import joblib
 import re
 import os
+import numpy as np
 
 st.set_page_config(
     page_title="Spam Detection Dashboard",
@@ -26,51 +27,55 @@ def clean_text(text):
     return text
 
 @st.cache_resource
-def load_or_train():
-    """Load or train model"""
+def load_model():
+    """Load model with error handling"""
     try:
         model = joblib.load('models/classifier.pkl')
         vectorizer = joblib.load('models/vectorizer.pkl')
         return model, vectorizer, "loaded"
-    except:
-        try:
-            from train_model import train_and_save
-            with st.spinner("⏳ Training model on Enron dataset (33,716 emails)... This may take 5-10 minutes"):
-                model, vectorizer = train_and_save()
-            return model, vectorizer, "trained"
-        except Exception as e:
-            return None, None, f"error: {str(e)}"
+    except Exception as e:
+        return None, None, f"error: {str(e)}"
 
 def predict_spam(text, model, vectorizer):
     if model is None or vectorizer is None:
-        return {'prediction': 'error', 'confidence': 0}
+        return {'prediction': 'error', 'confidence': 0, 'message': 'Model not loaded'}
     
-    clean = clean_text(text)
-    vectorized = vectorizer.transform([clean])
-    prediction = model.predict(vectorized)[0]
-    probabilities = model.predict_proba(vectorized)[0]
-    
-    return {
-        'prediction': 'spam' if prediction == 1 else 'ham',
-        'confidence': float(max(probabilities))
-    }
+    try:
+        clean = clean_text(text)
+        vectorized = vectorizer.transform([clean])
+        
+        # Check if vectorized has features
+        if vectorized.shape[1] == 0:
+            return {'prediction': 'error', 'confidence': 0, 'message': 'No features extracted'}
+        
+        # Get prediction
+        prediction = model.predict(vectorized)[0]
+        probabilities = model.predict_proba(vectorized)[0]
+        
+        return {
+            'prediction': 'spam' if prediction == 1 else 'ham',
+            'confidence': float(max(probabilities)),
+            'spam_probability': float(probabilities[1]),
+            'ham_probability': float(probabilities[0])
+        }
+    except Exception as e:
+        return {'prediction': 'error', 'confidence': 0, 'message': str(e)}
 
 # Load model
-model, vectorizer, status = load_or_train()
+model, vectorizer, status = load_model()
 
+# Title
 st.title("📧 Spam Detection Dashboard")
 st.markdown("### Powered by Random Forest + Enron Dataset (33,716 emails)")
 
+# Sidebar
 with st.sidebar:
     st.title("📊 Status")
     if status == "loaded":
         st.success("✅ Model Loaded")
         st.info("🚀 Ready for predictions")
-    elif status == "trained":
-        st.success("✅ Model Trained Successfully!")
     else:
-        st.error(f"❌ Model Error")
-        st.text(status)
+        st.error(f"❌ Model Error: {status}")
 
 st.subheader("🔍 Check if an email is Spam or Ham")
 
@@ -79,12 +84,15 @@ col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("📌 Spam"):
         st.session_state.email_input = "Congratulations! You won $1,000,000! Click here to claim!"
+        st.rerun()
 with col2:
     if st.button("📌 Ham"):
         st.session_state.email_input = "Hi, how are you doing today? Can we meet tomorrow?"
+        st.rerun()
 with col3:
     if st.button("📌 URGENT"):
         st.session_state.email_input = "URGENT: Your account has been compromised! Verify immediately!"
+        st.rerun()
 
 email_input = st.text_area(
     "Enter email content:",
@@ -95,13 +103,18 @@ email_input = st.text_area(
 
 if st.button("🔍 Predict", type="primary"):
     if email_input:
-        if model is not None:
+        if model is not None and vectorizer is not None:
             with st.spinner("Analyzing..."):
                 result = predict_spam(email_input, model, vectorizer)
+                
                 if result['prediction'] == 'spam':
                     st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
+                    st.info(f"Spam Probability: {result.get('spam_probability', 0):.2%}")
                 elif result['prediction'] == 'ham':
                     st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
+                    st.info(f"Ham Probability: {result.get('ham_probability', 0):.2%}")
+                else:
+                    st.warning(f"⚠️ {result.get('message', 'Unknown error')}")
         else:
             st.warning("Model not ready")
     else:
