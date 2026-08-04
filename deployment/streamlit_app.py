@@ -6,7 +6,6 @@ import streamlit as st
 import requests
 import pandas as pd
 import os
-import json
 
 st.set_page_config(
     page_title="Spam Detection Dashboard",
@@ -16,10 +15,8 @@ st.set_page_config(
 
 # Auto-detect API URL
 def get_api_url():
-    # Check if running on Render
-    if os.environ.get('RENDER'):
-        return os.environ.get('API_URL', 'https://spam-api.onrender.com')
-    # Local development
+    if os.environ.get('RAILWAY_ENVIRONMENT'):
+        return os.environ.get('API_URL', 'https://spam-api.up.railway.app')
     return 'http://localhost:8000'
 
 API_URL = get_api_url()
@@ -40,22 +37,21 @@ with st.sidebar:
     try:
         response = requests.get(f"{API_URL}/health", timeout=5)
         if response.status_code == 200:
-            st.success(f"✅ API Online")
-            st.info(f"🌐 {API_URL}")
+            st.success("✅ API Online")
         else:
             st.error("❌ API Offline")
     except:
         st.error("❌ API Not Reachable")
-        st.warning("Deployed API may take a minute to start")
+        st.info("Deploying... May take a few minutes")
     
     st.markdown("---")
-    st.caption("🚀 Deployed with Render")
+    st.caption("🚀 Deployed on Railway")
 
 # Main Content
 st.title("📧 Spam Detection Dashboard")
 st.markdown("### Powered by FastAPI + Random Forest (97.34% Accuracy)")
 
-tab1, tab2, tab3 = st.tabs(["🔍 Single Prediction", "📊 Batch Analysis", "📈 Performance"])
+tab1, tab2 = st.tabs(["🔍 Single Prediction", "📊 Batch Analysis"])
 
 with tab1:
     col1, col2 = st.columns([3, 1])
@@ -97,9 +93,9 @@ with tab1:
                     col1, col2, col3 = st.columns(3)
                     with col1:
                         if result['prediction'] == 'spam':
-                            st.error(f"⚠️ SPAM")
+                            st.error("⚠️ SPAM")
                         else:
-                            st.success(f"✅ HAM")
+                            st.success("✅ HAM")
                     with col2:
                         st.metric("Confidence", f"{result['confidence']:.2%}")
                     with col3:
@@ -113,8 +109,6 @@ with tab1:
                     with col2:
                         st.metric("Ham Prob.", f"{result['ham_probability']:.2%}")
                         st.progress(result['ham_probability'])
-                    
-                    st.caption(f"Model: {result.get('model_used', 'Random Forest')}")
             except Exception as e:
                 st.error(f"Connection error: {e}")
 
@@ -147,18 +141,5 @@ with tab2:
                     except Exception as e:
                         st.error(f"Error: {e}")
 
-with tab3:
-    st.subheader("📈 Model Performance")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("🎯 Accuracy", "97.34%")
-    with col2:
-        st.metric("🚨 Spam Recall", "98.45%")
-    with col3:
-        st.metric("✅ Ham Recall", "96.19%")
-    with col4:
-        st.metric("📊 F1 Score", "97.32%")
-
 st.markdown("---")
-st.caption(f"🚀 API: {API_URL} | Built with FastAPI + Streamlit")
+st.caption(f"🚀 API: {API_URL}")
