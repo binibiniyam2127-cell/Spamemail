@@ -1,12 +1,12 @@
 """
-Spam Detection Dashboard - Standalone App
-Run: streamlit run app.py
+Spam Detection Dashboard - Training on First Run
 """
 import streamlit as st
 import pandas as pd
 import joblib
 import re
 import os
+import sys
 
 st.set_page_config(
     page_title="Spam Detection Dashboard",
@@ -15,7 +15,6 @@ st.set_page_config(
 )
 
 def clean_text(text):
-    """Clean email text"""
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
@@ -28,17 +27,33 @@ def clean_text(text):
     return text
 
 @st.cache_resource
-def load_model():
-    """Load model with caching"""
+def load_or_train_model():
+    """Load model if exists, otherwise train"""
     try:
+        # Try to load existing model
         model = joblib.load('models/classifier.pkl')
         vectorizer = joblib.load('models/vectorizer.pkl')
-        return model, vectorizer
-    except Exception as e:
-        return None, None
+        return model, vectorizer, "loaded"
+    except:
+        # Model doesn't exist, train it
+        try:
+            st.info("⏳ Training model... Please wait (2-3 minutes)")
+            import subprocess
+            result = subprocess.run(
+                [sys.executable, "train_model.py"],
+                capture_output=True,
+                text=True
+            )
+            if result.returncode == 0:
+                model = joblib.load('models/classifier.pkl')
+                vectorizer = joblib.load('models/vectorizer.pkl')
+                return model, vectorizer, "trained"
+            else:
+                return None, None, "error"
+        except Exception as e:
+            return None, None, "error"
 
 def predict_spam(text, model, vectorizer):
-    """Predict if text is spam"""
     if model is None or vectorizer is None:
         return {'prediction': 'error', 'confidence': 0}
     
@@ -52,23 +67,24 @@ def predict_spam(text, model, vectorizer):
         'confidence': float(max(probabilities))
     }
 
+# Load or train model
+with st.spinner("Loading model..."):
+    model, vectorizer, status = load_or_train_model()
+
 # Title
 st.title("📧 Spam Detection Dashboard")
 st.markdown("### Powered by Random Forest (97.34% Accuracy)")
 
-# Load model
-model, vectorizer = load_model()
-
 # Sidebar
 with st.sidebar:
     st.title("📊 Status")
-    if model is not None:
+    if status == "loaded":
         st.success("✅ Model Loaded")
+    elif status == "trained":
+        st.success("✅ Model Trained Successfully!")
     else:
-        st.error("❌ Model Not Loaded")
-        st.info("Training on first run...")
+        st.error("❌ Model Not Available")
 
-# Main content
 st.subheader("🔍 Check if an email is Spam or Ham")
 
 # Quick examples
@@ -85,7 +101,6 @@ with col3:
     if st.button("📌 URGENT"):
         st.session_state.email_input = "URGENT: Your account has been compromised!"
 
-# Text input
 email_input = st.text_area(
     "Enter email content:",
     height=150,
@@ -93,17 +108,17 @@ email_input = st.text_area(
     key="email_input"
 )
 
-# Predict button
 if st.button("🔍 Predict", type="primary"):
     if email_input:
-        with st.spinner("Analyzing..."):
-            result = predict_spam(email_input, model, vectorizer)
-            if result['prediction'] == 'spam':
-                st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
-            elif result['prediction'] == 'ham':
-                st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
-            else:
-                st.warning("Model not ready. Please wait.")
+        if model is not None and vectorizer is not None:
+            with st.spinner("Analyzing..."):
+                result = predict_spam(email_input, model, vectorizer)
+                if result['prediction'] == 'spam':
+                    st.error(f"⚠️ SPAM (Confidence: {result['confidence']:.2%})")
+                elif result['prediction'] == 'ham':
+                    st.success(f"✅ HAM (Confidence: {result['confidence']:.2%})")
+        else:
+            st.warning("Model not ready. Please wait for training to complete.")
     else:
         st.warning("Please enter some text")
 
