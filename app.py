@@ -1,5 +1,5 @@
 """
-Spam Detection Dashboard
+Spam Detection Dashboard - With Full Enron Dataset
 """
 import streamlit as st
 import pandas as pd
@@ -17,23 +17,25 @@ def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
+    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
+    text = re.sub(r'\S+@\S+', 'EMAIL', text)
+    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
+    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 @st.cache_resource
 def load_or_train():
-    """Load model if exists, otherwise train"""
+    """Load or train model"""
     try:
-        # Try to load existing model
         model = joblib.load('models/classifier.pkl')
         vectorizer = joblib.load('models/vectorizer.pkl')
         return model, vectorizer, "loaded"
     except:
         try:
-            # Train model
             from train_model import train_and_save
-            with st.spinner("⏳ Training model... Please wait (1-2 minutes)"):
+            with st.spinner("⏳ Training model on Enron dataset (33,716 emails)... This may take 5-10 minutes"):
                 model, vectorizer = train_and_save()
             return model, vectorizer, "trained"
         except Exception as e:
@@ -56,11 +58,9 @@ def predict_spam(text, model, vectorizer):
 # Load model
 model, vectorizer, status = load_or_train()
 
-# Title
 st.title("📧 Spam Detection Dashboard")
-st.markdown("### Powered by Random Forest")
+st.markdown("### Powered by Random Forest + Enron Dataset (33,716 emails)")
 
-# Sidebar
 with st.sidebar:
     st.title("📊 Status")
     if status == "loaded":
@@ -78,13 +78,13 @@ st.subheader("🔍 Check if an email is Spam or Ham")
 col1, col2, col3 = st.columns(3)
 with col1:
     if st.button("📌 Spam"):
-        st.session_state.email_input = "Congratulations you won a prize click here"
+        st.session_state.email_input = "Congratulations! You won $1,000,000! Click here to claim!"
 with col2:
     if st.button("📌 Ham"):
-        st.session_state.email_input = "Hi how are you doing today"
+        st.session_state.email_input = "Hi, how are you doing today? Can we meet tomorrow?"
 with col3:
     if st.button("📌 URGENT"):
-        st.session_state.email_input = "Urgent action required verify your account"
+        st.session_state.email_input = "URGENT: Your account has been compromised! Verify immediately!"
 
 email_input = st.text_area(
     "Enter email content:",

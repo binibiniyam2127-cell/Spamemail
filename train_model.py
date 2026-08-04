@@ -1,126 +1,120 @@
+"""
+Train model with full Enron dataset
+"""
+import os
 import pandas as pd
 import joblib
 import re
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.calibration import CalibratedClassifierCV
+from sklearn.model_selection import train_test_split
+import urllib.request
+
+def download_enron():
+    """Download Enron spam dataset"""
+    url = "https://huggingface.co/datasets/SetFit/enron_spam/resolve/main/enron_spam_data.csv"
+    os.makedirs('data', exist_ok=True)
+    
+    if not os.path.exists('data/enron_spam_data.csv'):
+        print("📥 Downloading Enron dataset (33,716 emails)...")
+        urllib.request.urlretrieve(url, 'data/enron_spam_data.csv')
+        print("✅ Download complete!")
+    else:
+        print("✅ Dataset already exists")
 
 def clean_text(text):
+    if not isinstance(text, str):
+        text = str(text)
     text = text.lower()
-    text = re.sub(r'[^a-zA-Z\s]', '', text)
-    return text.strip()
+    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
+    text = re.sub(r'\S+@\S+', 'EMAIL', text)
+    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
+    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
+    text = re.sub(r'\s+', ' ', text).strip()
+    return text
 
-# 50+ spam examples
-spam = [
-    # Spam patterns
-    "congratulations you won a prize",
-    "free money click here",
-    "urgent action required verify your account",
-    "you have been selected for a special offer",
-    "claim your cash prize now",
-    "limited time offer act now",
-    "winner winner chicken dinner",
-    "click here to claim your reward",
-    "your account has been compromised",
-    "verify your identity immediately",
-    "free gift card waiting for you",
-    "you are the lucky winner",
-    "exclusive deal just for you",
-    "don't miss this opportunity",
-    "cash bonus available now",
-    "win a free iphone",
-    "you won a million dollars",
-    "claim your free gift",
-    "urgent security alert",
-    "account suspended click here",
-    "free vacation to bahamas",
-    "you have been chosen",
-    "special promotion just for you",
-    "act fast limited stock",
-    "guaranteed approval",
-    "lowest price guaranteed",
-    "free trial offer",
-    "risk free opportunity",
-    "make money fast",
-    "work from home opportunity",
-    "earn extra cash",
-    "no experience needed",
-    "get rich quick",
-    "passive income opportunity",
-    "financial freedom",
-    "debt relief program",
-    "credit card offer approved",
-    "loan approval guaranteed",
-    "mortgage refinance offer",
-    "insurance quote request",
-    "medication at low cost",
-    "pharmacy discount",
-    "health supplement offer",
-    "weight loss miracle",
-    "anti aging breakthrough"
-]
+def train_and_save():
+    print("🚀 Training model with Enron dataset...")
+    
+    # Download dataset
+    download_enron()
+    
+    # Load and preprocess
+    df = pd.read_csv('data/enron_spam_data.csv')
+    print(f"📊 Loaded {len(df)} emails")
+    
+    # Combine subject and message
+    df['text'] = df['Subject'].fillna('') + ' ' + df['Message'].fillna('')
+    df['label'] = df['Spam/Ham'].map({'spam': 1, 'ham': 0})
+    
+    # Clean text
+    print("🧹 Cleaning text...")
+    df['clean'] = df['text'].apply(clean_text)
+    
+    # Remove empty text
+    df = df[df['clean'].str.len() > 10]
+    print(f"📊 After cleaning: {len(df)} emails")
+    
+    # Sample for faster training (use 80% of data for speed)
+    df = df.sample(frac=0.8, random_state=42)
+    print(f"📊 Using {len(df)} emails for training")
+    
+    # Show class distribution
+    print(f"   Ham: {len(df[df['label']==0])}")
+    print(f"   Spam: {len(df[df['label']==1])}")
+    
+    # Vectorize
+    print("🔧 Creating features...")
+    vectorizer = TfidfVectorizer(
+        max_features=5000,
+        stop_words='english',
+        ngram_range=(1, 2),
+        min_df=3,
+        max_df=0.8
+    )
+    
+    X = vectorizer.fit_transform(df['clean'])
+    y = df['label']
+    
+    # Split for validation
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42, stratify=y
+    )
+    
+    # Train Random Forest
+    print("🌲 Training Random Forest...")
+    rf = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=25,
+        min_samples_split=5,
+        random_state=42,
+        n_jobs=-1
+    )
+    
+    rf.fit(X_train, y_train)
+    
+    # Evaluate
+    y_pred = rf.predict(X_test)
+    accuracy = (y_pred == y_test).mean()
+    print(f"✅ Accuracy: {accuracy:.4f}")
+    
+    # Calibrate
+    print("🎯 Calibrating model...")
+    calibrated_rf = CalibratedClassifierCV(rf, cv=3, method='isotonic')
+    calibrated_rf.fit(X_train, y_train)
+    
+    # Save models
+    os.makedirs('models', exist_ok=True)
+    joblib.dump(calibrated_rf, 'models/classifier.pkl')
+    joblib.dump(vectorizer, 'models/vectorizer.pkl')
+    
+    print("✅ Model trained and saved!")
+    print(f"📊 Final accuracy: {accuracy:.4f}")
+    
+    return calibrated_rf, vectorizer
 
-# 50+ ham examples  
-ham = [
-    "hi how are you doing today",
-    "can we meet tomorrow to discuss the project",
-    "thanks for your email i will review it",
-    "please find attached the report",
-    "good morning team here is the update",
-    "let me know your thoughts on this",
-    "looking forward to our meeting",
-    "have a great day",
-    "thanks for your help",
-    "i appreciate your response",
-    "can you send me the file",
-    "let's schedule a call",
-    "thank you for your time",
-    "best regards",
-    "have a wonderful weekend",
-    "see you at the meeting",
-    "will send the documents shortly",
-    "please review the proposal",
-    "looking forward to hearing from you",
-    "let's touch base tomorrow",
-    "hope you are well",
-    "thank you for your assistance",
-    "i will get back to you soon",
-    "we should catch up soon",
-    "please confirm your availability",
-    "looking forward to working with you",
-    "have a productive week",
-    "talk to you then",
-    "enjoy your weekend",
-    "take care of yourself",
-    "keep up the good work",
-    "thanks for the update",
-    "i understand your concern",
-    "let's find a solution together",
-    "appreciate your patience",
-    "will follow up next week",
-    "please let me know if you have questions",
-    "looking forward to your feedback",
-    "hope all is well",
-    "take care and stay safe"
-]
-
-df = pd.DataFrame({
-    'text': spam + ham,
-    'label': [1]*len(spam) + [0]*len(ham)
-})
-
-df['clean'] = df['text'].apply(clean_text)
-
-vectorizer = TfidfVectorizer(max_features=2000)
-X = vectorizer.fit_transform(df['clean'])
-y = df['label']
-
-rf = RandomForestClassifier(n_estimators=100, random_state=42)
-rf.fit(X, y)
-
-import joblib
-import os
-os.makedirs('models', exist_ok=True)
-joblib.dump(rf, 'models/classifier.pkl')
-joblib.dump(vectorizer, 'models/vectorizer.pkl')
-
-print(f"✅ Model trained on {len(df)} samples")
+if __name__ == "__main__":
+    train_and_save()
