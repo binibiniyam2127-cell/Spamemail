@@ -1,3 +1,0 @@
-Features: 3000
-Samples: 33640
-Accuracy: 0.9599
