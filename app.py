@@ -1,12 +1,13 @@
 """
-Spam Detection Dashboard - Fixed Version
+Spam Detection Dashboard - Auto Train on First Run
 """
 import streamlit as st
 import pandas as pd
 import joblib
 import re
 import os
-import numpy as np
+import sys
+import subprocess
 
 st.set_page_config(
     page_title="Spam Detection Dashboard",
@@ -27,44 +28,44 @@ def clean_text(text):
     return text
 
 @st.cache_resource
-def load_model():
-    """Load model with error handling"""
-    try:
-        # Check if model exists
-        if not os.path.exists('models/classifier.pkl'):
-            return None, None, "Model not found"
-        
-        model = joblib.load('models/classifier.pkl')
-        vectorizer = joblib.load('models/vectorizer.pkl')
-        
-        # Check feature consistency
+def load_or_train_model():
+    """Load model if exists, otherwise train"""
+    
+    # Check if model exists
+    model_path = 'models/classifier.pkl'
+    vectorizer_path = 'models/vectorizer.pkl'
+    
+    if os.path.exists(model_path) and os.path.exists(vectorizer_path):
         try:
-            # Test with a sample text
-            test_text = "test email"
-            test_clean = clean_text(test_text)
-            test_vec = vectorizer.transform([test_clean])
-            print(f"✅ Vectorizer works: {test_vec.shape[1]} features")
+            model = joblib.load(model_path)
+            vectorizer = joblib.load(vectorizer_path)
+            return model, vectorizer, "loaded"
         except Exception as e:
-            return None, None, f"Vectorizer error: {e}"
+            return None, None, f"Load error: {e}"
+    
+    # Train model
+    try:
+        st.info("⏳ Training model on Enron dataset (33,716 emails)... This may take 5-10 minutes")
         
-        return model, vectorizer, "loaded"
+        # Import and run training
+        from train_model import train_and_save
+        model, vectorizer = train_and_save()
+        
+        return model, vectorizer, "trained"
     except Exception as e:
-        return None, None, f"Error: {str(e)}"
+        return None, None, f"Training error: {str(e)}"
 
 def predict_spam(text, model, vectorizer):
     if model is None or vectorizer is None:
-        return {'prediction': 'error', 'confidence': 0, 'message': 'Model not loaded'}
+        return {'prediction': 'error', 'confidence': 0, 'message': 'Model not ready'}
     
     try:
-        # Clean and vectorize
         clean = clean_text(text)
         vectorized = vectorizer.transform([clean])
         
-        # Check if vectorized has features
         if vectorized.shape[1] == 0:
             return {'prediction': 'error', 'confidence': 0, 'message': 'No features extracted'}
         
-        # Get prediction
         prediction = model.predict(vectorized)[0]
         probabilities = model.predict_proba(vectorized)[0]
         
@@ -77,8 +78,9 @@ def predict_spam(text, model, vectorizer):
     except Exception as e:
         return {'prediction': 'error', 'confidence': 0, 'message': str(e)}
 
-# Load model
-model, vectorizer, status = load_model()
+# Load or train model
+with st.spinner("Loading model..."):
+    model, vectorizer, status = load_or_train_model()
 
 # Title
 st.title("📧 Spam Detection Dashboard")
@@ -89,13 +91,8 @@ with st.sidebar:
     st.title("📊 Status")
     if status == "loaded":
         st.success("✅ Model Loaded")
-        # Show feature count if available
-        try:
-            with open('models/feature_count.txt', 'r') as f:
-                info = f.read()
-                st.info(info)
-        except:
-            pass
+    elif status == "trained":
+        st.success("✅ Model Trained Successfully!")
     else:
         st.error(f"❌ {status}")
 
@@ -113,7 +110,7 @@ with col2:
         st.rerun()
 with col3:
     if st.button("📌 URGENT"):
-        st.session_state.email_input = "URGENT: Your account has been compromised! Verify immediately!"
+        st.session_state.email_input = "URGENT: Your account has been compromised!"
         st.rerun()
 
 email_input = st.text_area(
@@ -142,14 +139,3 @@ if st.button("🔍 Predict", type="primary"):
 
 st.markdown("---")
 st.caption("🚀 Deployed on Streamlit Cloud")
-
-# Show debug info in expander
-with st.expander("🔧 Debug Info"):
-    st.write(f"Model loaded: {model is not None}")
-    st.write(f"Vectorizer loaded: {vectorizer is not None}")
-    if vectorizer is not None:
-        try:
-            test_vec = vectorizer.transform(["test"])
-            st.write(f"Features: {test_vec.shape[1]}")
-        except:
-            st.write("Vectorizer test failed")
