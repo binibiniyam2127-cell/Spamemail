@@ -1,5 +1,5 @@
 """
-Train model with full Enron dataset - Simplified
+Train model - Fixed vectorizer consistency
 """
 import os
 import pandas as pd
@@ -9,10 +9,10 @@ import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
+import urllib.request
 
 def download_enron():
     """Download Enron spam dataset"""
-    import urllib.request
     url = "https://huggingface.co/datasets/SetFit/enron_spam/resolve/main/enron_spam_data.csv"
     os.makedirs('data', exist_ok=True)
     
@@ -27,7 +27,11 @@ def clean_text(text):
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
-    text = re.sub(r'[^a-zA-Z\s]', ' ', text)
+    text = re.sub(r'http\S+|www\S+|https\S+', 'URL', text)
+    text = re.sub(r'\S+@\S+', 'EMAIL', text)
+    text = re.sub(r'\$\d+\.?\d*', 'MONEY', text)
+    text = re.sub(r'\d+', ' ', text)
+    text = re.sub(r'[^a-zA-Z\s\.\,\!\?]', ' ', text)
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
@@ -63,19 +67,20 @@ def train_and_save():
         print(f"   Ham: {ham_count} emails")
         print(f"   Spam: {spam_count} emails")
         
-        # Vectorize
+        # Vectorize - SAME PARAMETERS EVERY TIME!
         print("🔧 Creating features...")
         vectorizer = TfidfVectorizer(
-            max_features=3000,
+            max_features=5000,
             stop_words='english',
             ngram_range=(1, 2),
-            min_df=2,
+            min_df=3,
             max_df=0.85
         )
         
         X = vectorizer.fit_transform(df['clean'])
         y = df['label']
         print(f"✅ Feature matrix: {X.shape}")
+        print(f"✅ Features: {X.shape[1]} features")
         
         # Train model
         print("🌲 Training Random Forest...")
@@ -103,8 +108,15 @@ def train_and_save():
         joblib.dump(rf, 'models/classifier.pkl')
         joblib.dump(vectorizer, 'models/vectorizer.pkl')
         
+        # Save feature count for debugging
+        with open('models/feature_count.txt', 'w') as f:
+            f.write(f"Features: {X.shape[1]}\n")
+            f.write(f"Accuracy: {accuracy:.4f}\n")
+            f.write(f"Samples: {len(df)}\n")
+        
         print("✅ Model trained and saved!")
         print(f"📊 Final accuracy: {accuracy:.4f}")
+        print(f"📊 Features: {X.shape[1]}")
         
         return rf, vectorizer
         
