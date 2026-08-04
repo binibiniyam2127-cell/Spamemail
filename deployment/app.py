@@ -45,7 +45,8 @@ def clean_text(text):
 @st.cache_resource
 def train_model():
     """Train model on first run"""
-    st.info("⏳ Training model on first run... (2-3 minutes)")
+    status_placeholder = st.empty()
+    status_placeholder.info("⏳ Loading model...")
     
     # Training data (Enron-inspired)
     spam_emails = [
@@ -113,7 +114,7 @@ def train_model():
     calibrated_rf = CalibratedClassifierCV(rf, cv=3, method='isotonic')
     calibrated_rf.fit(X, y)
     
-    st.success(f"✅ Model trained! Features: {X.shape[1]}")
+    status_placeholder.success("✅ Model ready!")
     return calibrated_rf, vectorizer
 
 def predict_spam(email, model, vectorizer):
@@ -137,11 +138,11 @@ model, vectorizer = train_model()
 st.set_page_config(page_title="Spam Detection", page_icon="📧", layout="wide")
 
 st.title("📧 Spam Detection API")
-st.markdown("### Powered by Random Forest (97% Accuracy)")
+st.markdown("### Powered by Random Forest")
 
 with st.sidebar:
     st.subheader("📊 Status")
-    st.success("✅ Model Ready")
+    st.success("✅ Online")
 
 st.subheader("🔍 Test")
 
